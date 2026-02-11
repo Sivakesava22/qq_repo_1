@@ -1,0 +1,52 @@
+from flask import Flask, Response
+from google.cloud import bigquery
+import plotly.express as px
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Cloud Run QQ / Manhattan Service Running"
+
+@app.route("/qq")
+def qq_plot():
+    client = bigquery.Client()
+
+    query = """
+    SELECT
+      SAFE_CAST(cac.gnomADg_AF AS FLOAT64) AS gnomad_af,
+      csc.freq AS freq,
+      (SAFE_CAST(cac.gnomADg_AF AS FLOAT64) - csc.freq) AS diff,
+      cac.id,
+      cac.symbol
+    FROM
+      `shc-variants.igg_dev.combined_annotations` AS cac
+    LEFT JOIN
+      `shc-variants.igg_dev.compare_subtype_control_full` AS csc
+    ON
+      cac.ID = csc.id
+    WHERE
+      SAFE_CAST(cac.gnomADg_AF AS FLOAT64) <= 0.05
+      AND csc.subtype = 'AIS'
+      AND csc.freq IS NOT NULL
+    LIMIT 500000
+    """
+
+    df = client.query(query).to_dataframe()
+
+    fig = px.scatter(
+        df,
+        x="gnomad_af",
+        y="freq",
+        hover_data=["id", "symbol", "diff"],
+        opacity=0.6,
+        title="QQ Plot – gnomAD AF vs Control Frequency"
+    )
+
+    html = fig.to_html(full_html=True)
+
+    return Response(html, mimetype="text/html")
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
